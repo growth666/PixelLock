@@ -55,6 +55,8 @@ python app.py
 
 如果只运行桌面程序，核心依赖是 `PySide6`；`numpy`、`Pillow` 和 `matplotlib` 还用于保留的旧版实验脚本 `encrypt_lena.py`。
 
+运行旧实验脚本前，请在 `image/` 中准备 `input.png` 和 `photo.png`，再从项目根目录执行 `python encrypt_lena.py`。这些本地输入图片和生成结果均不会提交到 Git。
+
 ## 使用 exe
 
 已生成两个 Windows 版本：

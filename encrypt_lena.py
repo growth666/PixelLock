@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 N = 256  # 图像边长（也是灰度模数）
-SRC = r"C:\Users\smile\Desktop\2\QQ图片202610101847131.png"
+SRC = "./image/input.png"  # 将实验用图片放到此路径，或修改为自己的图片路径。
 
 
 # ---------- 载入 ----------
@@ -117,7 +117,7 @@ print("saved")
 
 
 
-MY_SRC = r"C:\Users\smile\Desktop\2\Kirisaki_www_zerochan_net_Beatrice.jpg"          # 改成你的照片路径
+MY_SRC = "./image/photo.png"  # 将第二张实验图片放到此路径，或修改为自己的图片路径。
 my_img = Image.open(MY_SRC).convert("L").resize((N, N), Image.LANCZOS)
 Me = np.asarray(my_img, dtype=np.int64)
 # 用组合加密（先 Arnold 置乱，再 Hill 扩散）加密我的照片
