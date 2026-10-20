@@ -22,19 +22,25 @@ PixelLock 是一个使用 **PySide6** 编写的本地图片加密桌面工具，
 
 ## 界面使用方法
 
-1. 点击 **OPEN IMAGE**，选择一张图片。
-2. 确认左侧已经显示 `256 × 256 / GRAYSCALE`。
+1. 点击 **打开图片 / OPEN IMAGE**，选择一张图片。
+2. 确认左侧输出为 `256 × 256 / 灰度`。
 3. 在算法下拉框中选择一次一密、Arnold、Hill 或组合加密。
 4. 根据算法设置参数：
-   - 一次一密：设置 `OTP SEED`。
-   - Arnold：设置 `ARNOLD ROUNDS`，范围为 `1–192`。
+   - 一次一密：设置 **密钥种子 / OTP SEED**。
+   - Arnold：设置 **Arnold 轮数 / ARNOLD ROUNDS**，范围为 `1–192`。
    - Hill：使用固定的 2×2 矩阵，不需要额外参数。
    - 组合加密：设置 Arnold 轮数，执行顺序为 Arnold → Hill。
-5. 点击 **ENCRYPT IMAGE** 查看密文。
-6. 点击 **SAVE CIPHER PNG** 保存密文图片。
-7. 点击 **DECRYPT + CHECK** 查看还原图和误差。
+5. 点击 **加密图片 / ENCRYPT IMAGE** 查看密文。
+6. 点击 **保存密文 PNG / SAVE CIPHER PNG** 保存密文图片。
+7. 点击 **解密并校验 / DECRYPT + CHECK** 查看还原图和误差。
 
-正确使用同一组参数解密时，当前实现应显示 `MAX ERROR: 0` 和 `MAE: 0.0000`。
+正确使用同一组参数解密时，应显示最大误差 `0`、平均误差 `0.0000`（英文为 `MAX ERROR` 和 `MAE`）。
+
+## 中英文切换与像素界面
+
+程序默认使用中文。点击右上角 **EN / English** 切换为英文，点击 **中 / 中文** 切回中文。按钮、算法名称、参数说明、预览提示、文件对话框标题、操作状态及误差值会同步切换；图片、参数、密文和还原结果保持不变。重新启动时默认回到中文。
+
+界面采用像素字标、像素锁图标、方块背景、硬边面板及游戏按键样式。正文保留易读字体，图像预览使用最近邻显示；界面装饰不会修改图片像素或加密结果。
 
 ## 从源码运行
 
@@ -82,6 +88,10 @@ python app.py
 PixelLock/
 ├─ app.py                # PySide6 界面和工作流
 ├─ crypto_algorithms.py  # 不依赖 NumPy 的加解密实现
+├─ i18n.py               # 中英文文案
+├─ pixel_theme.py        # 像素图标、字标及主题
+├─ smoke_test.py         # 打包产物启动与功能自检
+├─ tests/                # 语言切换与状态保留回归检查
 ├─ encrypt_lena.py       # 原有的 NumPy/Matplotlib 实验脚本
 ├─ requirements.txt      # Python 依赖
 ├─ PixelLock.spec        # PyInstaller 目录版配置

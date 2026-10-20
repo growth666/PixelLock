@@ -5,13 +5,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QImageReader, QPixmap
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QImage, QImageReader, QPixmap, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -31,6 +32,10 @@ from crypto_algorithms import (
     pixels_to_qimage,
     qimage_to_pixels,
 )
+
+
+from i18n import TEXT, translate
+from pixel_theme import PixelBackdrop, PixelComboBox, PixelSpinBox, pixel_icon, wordmark, PIXEL_STYLESHEET
 
 
 IMAGE_SIZE = 256
@@ -211,9 +216,13 @@ class PixelLockWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("PIXEL LOCK | Image Cipher Lab")
-        self.setMinimumSize(1260, 760)
+        self.setMinimumSize(1260, 800)
         self.resize(1400, 850)
 
+        self.language = "zh"
+        self._status_key = "ready"
+        self._status_values = {}
+        self.source_dimensions = None
         self.source_path: Path | None = None
         self.grayscale_image: QImage | None = None
         self.cipher_image: QImage | None = None
@@ -221,7 +230,7 @@ class PixelLockWindow(QMainWindow):
         self.restored_image: QImage | None = None
         self.error_metrics: tuple[int, float] | None = None
 
-        root = QWidget()
+        root = PixelBackdrop()
         root.setObjectName("root")
         self.setCentralWidget(root)
         page = QVBoxLayout(root)
@@ -232,21 +241,118 @@ class PixelLockWindow(QMainWindow):
         page.addWidget(self._separator())
         page.addLayout(self._build_workspace(), 1)
         page.addWidget(self._build_status_bar())
+        self.setStyleSheet(STYLESHEET + PIXEL_STYLESHEET)
+        self.setWindowIcon(pixel_icon("lock", "#b8fa70"))
+        dynamic = {self.file_label, self.dimensions_label, self.status_label,
+                   self.status_meta, self.input_card.canvas, self.cipher_card.canvas,
+                   self.output_card.canvas, *self.workflow_markers.values()}
+        self._text_bindings = [
+            (widget, widget.text())
+            for widget in self.findChildren(QLabel) + self.findChildren(QPushButton)
+            if widget not in dynamic and widget.text() in TEXT
+        ]
+        for button, icon_name in (
+            (self.open_button, "folder"), (self.encrypt_button, "lock"),
+            (self.decrypt_button, "unlock"), (self.save_cipher_button, "save"),
+        ):
+            button.setIcon(pixel_icon(icon_name, "#111827" if button in
+                           (self.open_button, self.encrypt_button) else "#dce9ef"))
+            button.setIconSize(QSize(20, 20))
+        for panel in self.findChildren(QFrame):
+            if panel.objectName() in ("panel", "previewCard"):
+                shadow = QGraphicsDropShadowEffect(panel)
+                shadow.setBlurRadius(0)
+                shadow.setOffset(5, 5)
+                shadow.setColor(QColor("#050913"))
+                panel.setGraphicsEffect(shadow)
+        self._apply_language()
+
+    def text(self, key: str, **values) -> str:
+        return translate(key, self.language, **values)
+
+    def toggle_language(self) -> None:
+        self.language = "en" if self.language == "zh" else "zh"
+        self._apply_language()
+
+    def _apply_language(self) -> None:
+        self.setWindowTitle(self.text("PIXEL LOCK | Image Cipher Lab"))
+        for widget, key in self._text_bindings:
+            widget.setText(self.text(key))
+        self.language_button.setText("EN / English" if self.language == "zh" else "中 / 中文")
+        self.language_button.setAccessibleName("Switch to English" if self.language == "zh" else "切换到中文")
+        blocked = self.algorithm_combo.blockSignals(True)
+        try:
+            for index in range(self.algorithm_combo.count()):
+                self.algorithm_combo.setItemText(index, self.text(self.algorithm_combo.itemData(index)))
+        finally:
+            self.algorithm_combo.blockSignals(blocked)
+        self.file_label.setText(self.source_path.name if self.source_path else self.text("未选择图片"))
+        self._refresh_dimensions()
+        for card, key in (
+            (self.input_card, "NO IMAGE\nOPEN AN IMAGE TO BEGIN"),
+            (self.cipher_card, "CIPHER STAGE\nWAITING FOR INPUT"),
+            (self.output_card, "RESTORE STAGE\nWAITING FOR DECRYPTION" if self.cipher_image is not None
+             else "RESTORE STAGE\nWAITING FOR CIPHER"),
+        ):
+            if card._image is None:
+                card.clear_image(self.text(key))
+        self._refresh_status()
+        self._refresh_error()
+        self._update_workflow()
+
+    def _refresh_dimensions(self) -> None:
+        if self.source_dimensions:
+            width, height = self.source_dimensions
+            self.dimensions_label.setText(self.text("dimensions", width=width, height=height))
+        else:
+            self.dimensions_label.setText(self.text("INPUT  —\nOUTPUT  256 × 256 / L"))
+
+    def _set_status(self, key: str, **values) -> None:
+        self._status_key, self._status_values = key, values
+        self._refresh_status()
+
+    def _refresh_status(self) -> None:
+        values = self._status_values.copy()
+        if self._status_key in ("selected", "cipher_ready"):
+            values["algorithm"] = self.algorithm_combo.currentText()
+        self.status_label.setText(self.text(self._status_key, **values))
+
+    def _refresh_error(self) -> None:
+        if self.error_metrics is None:
+            self.status_meta.setText(self.text("error_empty"))
+        else:
+            maximum, mean = self.error_metrics
+            self.status_meta.setText(self.text("error_values", maximum=maximum, mean=mean))
 
     def _build_header(self) -> QHBoxLayout:
         header = QHBoxLayout()
         identity = QVBoxLayout()
         title = QLabel("PIXEL LOCK")
+        title.setPixmap(wordmark())
+        title.setAccessibleName("PIXEL LOCK")
         title.setObjectName("brand")
         subtitle = QLabel("IMAGE CIPHER LAB  /  8-BIT DESKTOP TOOL")
         subtitle.setObjectName("subtitle")
         identity.addWidget(title)
         identity.addWidget(subtitle)
+        emblem = QLabel()
+        emblem.setPixmap(pixel_icon("lock", "#b8fa70").pixmap(48, 48))
+        emblem.setFixedSize(64, 64)
+        emblem.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        emblem.setObjectName("pixelEmblem")
+        header.addWidget(emblem)
+        header.addSpacing(8)
         header.addLayout(identity)
         header.addStretch(1)
         badge = QLabel("LOCAL MODE  //  256 × 256")
         badge.setObjectName("badge")
         header.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.language_button = QPushButton("EN / English")
+        self.language_button.setObjectName("languageButton")
+        self.language_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.language_button.clicked.connect(self.toggle_language)
+        header.addSpacing(12)
+        header.addWidget(self.language_button)
         return header
 
     def _build_workspace(self) -> QHBoxLayout:
@@ -304,7 +410,7 @@ class PixelLockWindow(QMainWindow):
     def _build_sidebar(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("panel")
-        panel.setFixedWidth(268)
+        panel.setFixedWidth(284)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
@@ -338,7 +444,7 @@ class PixelLockWindow(QMainWindow):
         algorithm_title.setObjectName("sectionTitle")
         layout.addWidget(algorithm_title)
 
-        self.algorithm_combo = QComboBox()
+        self.algorithm_combo = PixelComboBox()
         self.algorithm_combo.addItem("一次一密 / OTP", "otp")
         self.algorithm_combo.addItem("Arnold 置乱", "arnold")
         self.algorithm_combo.addItem("Hill 扩散", "hill")
@@ -410,7 +516,7 @@ class PixelLockWindow(QMainWindow):
         row = QHBoxLayout()
         title = QLabel(label)
         title.setObjectName("muted")
-        spin = QSpinBox()
+        spin = PixelSpinBox()
         spin.setRange(minimum, maximum)
         spin.setValue(value)
         spin.setObjectName("parameterSpin")
@@ -443,13 +549,12 @@ class PixelLockWindow(QMainWindow):
     def _on_algorithm_changed(self, index: int) -> None:
         self.parameter_stack.setCurrentIndex(index)
         self._invalidate_cipher_if_needed()
-        selected = self.algorithm_combo.currentText()
-        self.status_label.setText(f"ALGORITHM SELECTED  //  {selected}")
+        self._set_status("selected")
 
     def _on_algorithm_parameters_changed(self, _value: int) -> None:
         self._invalidate_cipher_if_needed()
         if self.grayscale_image is not None:
-            self.status_label.setText("PARAMETERS UPDATED  //  READY TO ENCRYPT")
+            self._set_status("parameters")
 
     def _invalidate_cipher_if_needed(self) -> None:
         if self.cipher_image is None:
@@ -458,11 +563,11 @@ class PixelLockWindow(QMainWindow):
         self.cipher_settings = None
         self.restored_image = None
         self.error_metrics = None
-        self.cipher_card.clear_image("CIPHER STAGE\nWAITING FOR INPUT")
-        self.output_card.clear_image("RESTORE STAGE\nWAITING FOR CIPHER")
+        self.cipher_card.clear_image(self.text("CIPHER STAGE\nWAITING FOR INPUT"))
+        self.output_card.clear_image(self.text("RESTORE STAGE\nWAITING FOR CIPHER"))
         self.save_cipher_button.setEnabled(False)
         self.decrypt_button.setEnabled(False)
-        self.status_meta.setText("ERROR: —")
+        self._refresh_error()
         self._update_workflow()
 
     def _update_workflow(self) -> None:
@@ -480,7 +585,7 @@ class PixelLockWindow(QMainWindow):
             step = self.workflow_steps[number]
             marker = self.workflow_markers[number]
             step.setObjectName("cardTitle" if state in ("ACTIVE", "DONE") else "muted")
-            marker.setText(f"[{state}]")
+            marker.setText(f"[{self.text(state)}]")
             marker.setObjectName("statusMeta" if state in ("ACTIVE", "DONE") else "muted")
             step.style().unpolish(step)
             step.style().polish(step)
@@ -523,9 +628,9 @@ class PixelLockWindow(QMainWindow):
     def open_image(self) -> None:
         file_name, _ = QFileDialog.getOpenFileName(
             self,
-            "选择图片",
+            self.text("选择图片"),
             "",
-            "图片文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff);;所有文件 (*)",
+            self.text("图片文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff);;所有文件 (*)"),
         )
         if file_name:
             self.load_image(Path(file_name))
@@ -535,9 +640,9 @@ class PixelLockWindow(QMainWindow):
         reader.setAutoTransform(True)
         source = reader.read()
         if source.isNull():
-            message = reader.errorString() or "无法读取该图片。"
-            self.status_label.setText(f"ERROR  //  {message}")
-            QMessageBox.warning(self, "图片读取失败", message)
+            message = self.text("无法读取该图片。")
+            self._set_status("read_failed")
+            QMessageBox.warning(self, self.text("图片读取失败"), message)
             return
 
         original_width, original_height = source.width(), source.height()
@@ -554,18 +659,17 @@ class PixelLockWindow(QMainWindow):
         self._invalidate_cipher_if_needed()
         self.input_card.set_image(normalized)
         self.file_label.setText(path.name)
-        self.dimensions_label.setText(
-            f"INPUT  {original_width} × {original_height}\nOUTPUT  256 × 256 / GRAYSCALE"
-        )
+        self.source_dimensions = (original_width, original_height)
+        self._refresh_dimensions()
         self.clear_button.setEnabled(True)
         self.encrypt_button.setEnabled(True)
-        self.status_label.setText("IMAGE READY  //  已转换为 256×256 灰度图")
-        self.status_meta.setText("ERROR: —")
+        self._set_status("image_ready")
+        self._refresh_error()
         self._update_workflow()
 
     def encrypt_current_image(self) -> None:
         if self.grayscale_image is None:
-            self.status_label.setText("ERROR  //  请先打开一张图片")
+            self._set_status("need_image")
             return
 
         settings = self.current_algorithm_settings()
@@ -580,8 +684,8 @@ class PixelLockWindow(QMainWindow):
             )
             cipher = pixels_to_qimage(cipher_pixels)
         except (TypeError, ValueError, RuntimeError) as error:
-            self.status_label.setText(f"ENCRYPTION FAILED  //  {error}")
-            QMessageBox.warning(self, "加密失败", str(error))
+            self._set_status("encrypt_failed")
+            QMessageBox.warning(self, self.text("加密失败"), self.text("encrypt_failed"))
             return
 
         self.cipher_image = cipher
@@ -589,16 +693,16 @@ class PixelLockWindow(QMainWindow):
         self.restored_image = None
         self.error_metrics = None
         self.cipher_card.set_image(cipher)
-        self.output_card.clear_image("RESTORE STAGE\nWAITING FOR DECRYPTION")
+        self.output_card.clear_image(self.text("RESTORE STAGE\nWAITING FOR DECRYPTION"))
         self.save_cipher_button.setEnabled(True)
         self.decrypt_button.setEnabled(True)
-        self.status_label.setText(f"CIPHER READY  //  {self.algorithm_combo.currentText()}")
-        self.status_meta.setText("ERROR: —")
+        self._set_status("cipher_ready")
+        self._refresh_error()
         self._update_workflow()
 
     def save_cipher_image(self) -> None:
         if self.cipher_image is None:
-            self.status_label.setText("ERROR  //  请先加密图片")
+            self._set_status("need_cipher")
             return
 
         algorithm = str((self.cipher_settings or {}).get("algorithm", "cipher"))
@@ -607,9 +711,9 @@ class PixelLockWindow(QMainWindow):
         output_directory = self.application_directory() / "image"
         file_name, _ = QFileDialog.getSaveFileName(
             self,
-            "保存密文 PNG",
+            self.text("保存密文 PNG"),
             str(output_directory / suggested_name),
-            "PNG 图片 (*.png)",
+            self.text("PNG 图片 (*.png)"),
         )
         if not file_name:
             return
@@ -622,16 +726,16 @@ class PixelLockWindow(QMainWindow):
             saved = self.cipher_image.save(str(output_path), "PNG")
         except OSError as error:
             saved = False
-            message = str(error)
+            message = self.text("无法写入所选路径。")
         else:
-            message = "无法写入所选路径。"
+            message = self.text("无法写入所选路径。")
 
         if not saved:
-            self.status_label.setText("SAVE FAILED  //  密文 PNG 保存失败")
-            QMessageBox.warning(self, "保存失败", message)
+            self._set_status("save_failed")
+            QMessageBox.warning(self, self.text("保存失败"), message)
             return
 
-        self.status_label.setText(f"PNG SAVED  //  {output_path.name}")
+        self._set_status("saved", name=output_path.name)
 
     @staticmethod
     def application_directory() -> Path:
@@ -642,10 +746,10 @@ class PixelLockWindow(QMainWindow):
 
     def decrypt_current_image(self) -> None:
         if self.cipher_image is None or self.cipher_settings is None:
-            self.status_label.setText("ERROR  //  请先加密图片")
+            self._set_status("need_cipher")
             return
         if self.grayscale_image is None:
-            self.status_label.setText("ERROR  //  原图不可用，请重新打开图片")
+            self._set_status("no_source")
             return
 
         settings = self.cipher_settings
@@ -664,35 +768,36 @@ class PixelLockWindow(QMainWindow):
             )
             restored = pixels_to_qimage(restored_pixels)
         except (TypeError, ValueError, RuntimeError) as error:
-            self.status_label.setText(f"DECRYPTION FAILED  //  {error}")
-            QMessageBox.warning(self, "解密失败", str(error))
+            self._set_status("decrypt_failed")
+            QMessageBox.warning(self, self.text("解密失败"), self.text("decrypt_failed"))
             return
 
         self.restored_image = restored
         self.error_metrics = (maximum_error, mean_error)
         self.output_card.set_image(restored)
-        self.status_label.setText("DECRYPTED  //  还原结果已生成")
-        self.status_meta.setText(f"MAX ERROR: {maximum_error}  /  MAE: {mean_error:.4f}")
+        self._set_status("decrypted")
+        self._refresh_error()
         self._update_workflow()
 
     def clear_source(self) -> None:
         self.source_path = None
+        self.source_dimensions = None
         self.grayscale_image = None
         self.cipher_image = None
         self.cipher_settings = None
         self.restored_image = None
         self.error_metrics = None
-        self.input_card.clear_image("NO IMAGE\nOPEN AN IMAGE TO BEGIN")
-        self.cipher_card.clear_image("CIPHER STAGE\nWAITING FOR INPUT")
-        self.output_card.clear_image("RESTORE STAGE\nWAITING FOR CIPHER")
-        self.file_label.setText("未选择图片")
-        self.dimensions_label.setText("INPUT  —\nOUTPUT  256 × 256 / L")
+        self.input_card.clear_image(self.text("NO IMAGE\nOPEN AN IMAGE TO BEGIN"))
+        self.cipher_card.clear_image(self.text("CIPHER STAGE\nWAITING FOR INPUT"))
+        self.output_card.clear_image(self.text("RESTORE STAGE\nWAITING FOR CIPHER"))
+        self.file_label.setText(self.text("未选择图片"))
+        self._refresh_dimensions()
         self.clear_button.setEnabled(False)
         self.encrypt_button.setEnabled(False)
         self.save_cipher_button.setEnabled(False)
         self.decrypt_button.setEnabled(False)
-        self.status_label.setText("READY  //  请打开一张图片")
-        self.status_meta.setText("ERROR: —")
+        self._set_status("ready")
+        self._refresh_error()
         self._update_workflow()
 
 
