@@ -2,6 +2,22 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-image/
-requirements.txt
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# PyInstaller and local build output
+build/
+dist/
+
+# Generated image output; keep only the directory marker in Git
+image/*
+!image/.gitkeep
+*_cipher.png
+
+# Editor and scratch files
 tempCodeRunnerFile.py
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

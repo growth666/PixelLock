@@ -604,7 +604,7 @@ class PixelLockWindow(QMainWindow):
         algorithm = str((self.cipher_settings or {}).get("algorithm", "cipher"))
         source_stem = self.source_path.stem if self.source_path else "image"
         suggested_name = f"{source_stem}_{algorithm}_cipher.png"
-        output_directory = Path(__file__).resolve().parent / "image"
+        output_directory = self.application_directory() / "image"
         file_name, _ = QFileDialog.getSaveFileName(
             self,
             "保存密文 PNG",
@@ -632,6 +632,13 @@ class PixelLockWindow(QMainWindow):
             return
 
         self.status_label.setText(f"PNG SAVED  //  {output_path.name}")
+
+    @staticmethod
+    def application_directory() -> Path:
+        """Return the directory beside the executable or source file."""
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parent
 
     def decrypt_current_image(self) -> None:
         if self.cipher_image is None or self.cipher_settings is None:
@@ -690,6 +697,10 @@ class PixelLockWindow(QMainWindow):
 
 
 def main() -> int:
+    if "--self-test" in sys.argv:
+        from smoke_test import run_self_test
+
+        return run_self_test(PixelLockWindow)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet(STYLESHEET)
